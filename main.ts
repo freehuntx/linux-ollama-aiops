@@ -18,7 +18,8 @@ interface HealthCheckResult {
 }
 
 class SystemHealthChecker {
-  private ollamaUrl: string;
+  private apiUrl: string;
+  private apiKey: string;
   private model: string;
   private verbose: boolean;
   private logSources: LogSource[] = [
@@ -117,9 +118,10 @@ class SystemHealthChecker {
     }
   ];
 
-  constructor(ollamaUrl = "http://localhost:11434", model = "qwen3:8b", verbose = false) {
-    this.ollamaUrl = ollamaUrl;
+  constructor(apiUrl = "http://localhost:11434/v1", model = "qwen3:8b", apiKey = "", verbose = false) {
+    this.apiUrl = apiUrl;
     this.model = model;
+    this.apiKey = apiKey;
     this.verbose = verbose;
   }
 
@@ -150,11 +152,7 @@ class SystemHealthChecker {
   }
 
   private async analyzeWithLLM(source: LogSource, logContent: string): Promise<HealthCheckResult> {
-    const prompt = `You are an expert Linux system administrator analyzing system logs.
-Analyze these ${source.name} logs carefully and identify any issues.
-
-Log Type: ${source.name}
-Description: ${source.description}
+    const systemPrompt = `You are an expert Linux system administrator analyzing system logs.
 
 IMPORTANT INSTRUCTIONS:
 1. Look for specific problems like:
@@ -184,36 +182,57 @@ Status levels:
 - "warning": Issues that need attention but system is functional
 - "critical": Serious problems requiring immediate action
 
+Do not include markdown formatting (like \`\`\`json) in the response. Return raw JSON only.`;
+
+    const userPrompt = `Analyze these ${source.name} logs carefully and identify any issues.
+
+Log Type: ${source.name}
+Description: ${source.description}
+
 Logs to analyze:
 ${logContent.substring(0, 4000)}
 
 Respond with JSON only:`;
 
     try {
-      const response = await fetch(`${this.ollamaUrl}/api/generate`, {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+
+      const response = await fetch(`${this.apiUrl}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           model: this.model,
-          prompt: prompt,
-          stream: false,
-          format: "json",
-          options: {
-            temperature: 0.1,
-            top_p: 0.9,
-            num_predict: 500,
-          }
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt
+            },
+            {
+              role: "user",
+              content: userPrompt
+            }
+          ],
+          temperature: 0.1,
+          top_p: 0.9,
+          max_tokens: 500,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status}`);
+        throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
       
       try {
-        const analysis = JSON.parse(data.response);
+        const responseContent = data.choices[0].message.content;
+        const analysis = JSON.parse(responseContent);
         return {
           source: source.name,
           status: analysis.status || "warning",
@@ -227,7 +246,7 @@ Respond with JSON only:`;
           source: source.name,
           status: "warning",
           summary: "Analysis completed with parsing issues",
-          details: data.response.substring(0, 500),
+          details: data.choices[0].message.content.substring(0, 500),
           issues: ["LLM response parsing failed"],
         };
       }
@@ -242,19 +261,33 @@ Respond with JSON only:`;
     }
   }
 
-  private async checkOllamaConnection(): Promise<boolean> {
+  private async checkApiConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.ollamaUrl}/api/tags`);
+      const headers: Record<string, string> = {};
+      
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+
+      const response = await fetch(`${this.apiUrl}/models`, { headers });
       if (!response.ok) return false;
       
       const data = await response.json();
-      const hasModel = data.models?.some((m: any) => 
-        m.name === this.model || m.name.startsWith(`${this.model}:`)
-      );
       
-      if (!hasModel) {
+      // Check if the model exists in the list
+      // The response format may vary, try to handle both OpenAI and Ollama formats
+      const models = data.data || data.models || [];
+      const hasModel = models.some((m: any) => {
+        const modelId = m.id || m.name || "";
+        return modelId === this.model || modelId.startsWith(`${this.model}:`);
+      });
+      
+      if (!hasModel && models.length > 0) {
         console.log(`⚠️  Model '${this.model}' not found. Available models:`);
-        data.models?.forEach((m: any) => console.log(`   - ${m.name}`));
+        models.forEach((m: any) => {
+          const modelId = m.id || m.name || "";
+          console.log(`   - ${modelId}`);
+        });
         return false;
       }
       
@@ -384,18 +417,18 @@ Respond with JSON only:`;
   async run() {
     console.log("🔍 Starting Comprehensive System Health Check...\n");
 
-    // Check Ollama connection
-    console.log("🤖 Connecting to Ollama LLM...");
-    const ollamaConnected = await this.checkOllamaConnection();
+    // Check API connection
+    console.log("🤖 Connecting to LLM API...");
+    const apiConnected = await this.checkApiConnection();
     
-    if (!ollamaConnected) {
-      console.error("❌ Cannot connect to Ollama or model not found!");
-      console.error(`   Make sure Ollama is running at ${this.ollamaUrl}`);
-      console.error(`   and model '${this.model}' is installed.`);
-      console.error("   Run: ollama pull qwen3:8b");
+    if (!apiConnected) {
+      console.error("❌ Cannot connect to API or model not found!");
+      console.error(`   Make sure the API is running at ${this.apiUrl}`);
+      console.error(`   and model '${this.model}' is available.`);
+      console.error("   For Ollama: ollama pull qwen3:8b");
       Deno.exit(1);
     }
-    console.log("✅ Ollama connected successfully\n");
+    console.log("✅ API connected successfully\n");
 
     const results: HealthCheckResult[] = [];
     const totalSources = this.logSources.length;
@@ -459,29 +492,36 @@ Respond with JSON only:`;
 // Main execution
 if (import.meta.main) {
   const args = Deno.args;
-  let model = "qwen3:8b";
-  let ollamaUrl = "http://localhost:11434";
-  let verbose = false;
+  
+  // Read from environment variables with defaults
+  let apiUrl = Deno.env.get("AIOPS_API_URL") || "http://localhost:11434/v1";
+  let apiKey = Deno.env.get("AIOPS_API_KEY") || "";
+  let model = Deno.env.get("AIOPS_MODEL") || "qwen3:8b";
+  let verbose = Deno.env.get("AIOPS_VERBOSE") === "true" || Deno.env.get("AIOPS_VERBOSE") === "1";
 
-  // Parse arguments
+  // Parse CLI arguments (override environment variables)
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--verbose" || args[i] === "-v") {
       verbose = true;
     } else if (args[i] === "--model" && i + 1 < args.length) {
       model = args[++i];
     } else if (args[i] === "--url" && i + 1 < args.length) {
-      ollamaUrl = args[++i];
+      apiUrl = args[++i];
+    } else if (args[i] === "--key" && i + 1 < args.length) {
+      apiKey = args[++i];
     } else if (!args[i].startsWith("-")) {
+      // Legacy: allow model as positional argument
       model = args[i];
     }
   }
   
   console.log("🚀 Linux System Health Checker v2.0");
   console.log(`📦 Using model: ${model}`);
-  console.log(`🔗 Ollama URL: ${ollamaUrl}`);
+  console.log(`🔗 API URL: ${apiUrl}`);
+  console.log(`🔑 API Key: ${apiKey ? "***" + apiKey.slice(-4) : "(none)"}`);
   console.log(`📋 Verbose mode: ${verbose ? "ON" : "OFF"}\n`);
 
-  const checker = new SystemHealthChecker(ollamaUrl, model, verbose);
+  const checker = new SystemHealthChecker(apiUrl, model, apiKey, verbose);
   
   try {
     await checker.run();
