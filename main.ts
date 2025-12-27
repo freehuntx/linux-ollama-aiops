@@ -17,6 +17,11 @@ interface HealthCheckResult {
   issues?: string[];
 }
 
+interface ModelInfo {
+  id?: string;
+  name?: string;
+}
+
 class SystemHealthChecker {
   private apiUrl: string;
   private apiKey: string;
@@ -284,14 +289,14 @@ Respond with JSON only:`;
       // Check if the model exists in the list
       // The response format may vary, try to handle both OpenAI and Ollama formats
       const models = data.data || data.models || [];
-      const hasModel = models.some((m: any) => {
+      const hasModel = models.some((m: ModelInfo) => {
         const modelId = m.id || m.name || "";
         return modelId === this.model || modelId.startsWith(`${this.model}:`);
       });
       
       if (!hasModel && models.length > 0) {
         console.log(`⚠️  Model '${this.model}' not found. Available models:`);
-        models.forEach((m: any) => {
+        models.forEach((m: ModelInfo) => {
           const modelId = m.id || m.name || "";
           console.log(`   - ${modelId}`);
         });
@@ -525,7 +530,7 @@ if (import.meta.main) {
   console.log("🚀 Linux System Health Checker v2.0");
   console.log(`📦 Using model: ${model}`);
   console.log(`🔗 API URL: ${apiUrl}`);
-  console.log(`🔑 API Key: ${apiKey ? "***" + apiKey.slice(-4) : "(none)"}`);
+  console.log(`🔑 API Key: ${apiKey ? "***" + apiKey.slice(-Math.min(4, apiKey.length)) : "(none)"}`);
   console.log(`📋 Verbose mode: ${verbose ? "ON" : "OFF"}\n`);
 
   const checker = new SystemHealthChecker(apiUrl, model, apiKey, verbose);
