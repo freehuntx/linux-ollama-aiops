@@ -1,12 +1,14 @@
 # Linux System Health Checker
 > Attention: This repo is entirely vibecoded! Claude Opus 4.1
 
-A comprehensive Deno-based tool that analyzes Linux system logs using Ollama LLM to provide detailed system health diagnostics.
+A comprehensive Deno-based tool that analyzes Linux system logs using any OpenAI-compatible LLM API to provide detailed system health diagnostics.
 
 ## Features
 
 - 🔍 **Comprehensive Log Analysis**: Checks 12+ different log sources including dmesg, kernel logs, I/O errors, and more
-- 🤖 **AI-Powered Analysis**: Uses Ollama LLM for intelligent pattern recognition
+- 🤖 **AI-Powered Analysis**: Uses any OpenAI-compatible LLM API (Ollama, OpenAI, etc.) for intelligent pattern recognition
+- 🔌 **Flexible API Support**: Works with Ollama, OpenAI, or any OpenAI-compatible API endpoint
+- ⚙️ **Configurable**: Support for CLI arguments and environment variables
 - 📊 **Detailed Reporting**: Provides specific issues, error messages, and actionable recommendations
 - ⚡ **Efficient**: Only checks recent logs with smart filtering
 - 🎯 **Prioritized Output**: Critical issues → Warnings → Healthy components
@@ -36,18 +38,27 @@ A comprehensive Deno-based tool that analyzes Linux system logs using Ollama LLM
    curl -fsSL https://deno.land/x/install/install.sh | sh
    ```
 
-2. **Ollama** - Install and run Ollama
+2. **LLM API** - Choose one:
+   
+   **Option A: Ollama (Local, Free)**
    ```bash
+   # Install Ollama
    curl -fsSL https://ollama.ai/install.sh | sh
    ollama serve
-   ```
-
-3. **LLM Model** - Pull a model (recommended: qwen3:8b)
-   ```bash
+   
+   # Pull a model (recommended: qwen3:8b)
    ollama pull qwen3:8b
    ```
+   
+   **Option B: OpenAI (Cloud, Paid)**
+   - Get an API key from https://platform.openai.com/
+   - Set the `AIOPS_API_KEY` environment variable
+   
+   **Option C: Any OpenAI-compatible API**
+   - Configure the API URL with `--url` or `AIOPS_API_URL`
+   - Provide API key if required with `--key` or `AIOPS_API_KEY`
 
-4. **Optional Tools** (for enhanced diagnostics):
+3. **Optional Tools** (for enhanced diagnostics):
    ```bash
    # For temperature monitoring
    sudo apt-get install lm-sensors
@@ -69,7 +80,7 @@ chmod +x main.ts
 
 ## Usage
 
-### Basic usage:
+### Basic usage (with local Ollama):
 ```bash
 ./main.ts
 ```
@@ -77,6 +88,8 @@ chmod +x main.ts
 ### With verbose output (shows raw log samples):
 ```bash
 ./main.ts --verbose
+# or
+./main.ts -v
 ```
 
 ### With custom model:
@@ -84,10 +97,39 @@ chmod +x main.ts
 ./main.ts --model mistral
 ```
 
-### With custom Ollama URL:
+### With custom API URL (for remote Ollama or other OpenAI-compatible APIs):
 ```bash
-./main.ts --url http://192.168.1.100:11434
+./main.ts --url http://192.168.1.100:11434/v1
 ```
+
+### With OpenAI or other cloud providers:
+```bash
+./main.ts --url https://api.openai.com/v1 --key sk-your-api-key --model gpt-4
+```
+
+### Using environment variables:
+```bash
+export AIOPS_API_URL="https://api.openai.com/v1"
+export AIOPS_API_KEY="sk-your-api-key"
+export AIOPS_MODEL="gpt-4"
+export AIOPS_VERBOSE="true"
+./main.ts
+```
+
+### Configuration Priority
+The tool uses the following priority for configuration:
+1. **CLI Arguments** (highest priority)
+2. **Environment Variables**
+3. **Default Values** (lowest priority)
+
+### All Configuration Options
+
+| CLI Argument | Environment Variable | Default | Description |
+|-------------|---------------------|---------|-------------|
+| `--url` | `AIOPS_API_URL` | `http://localhost:11434/v1` | API base URL |
+| `--key` | `AIOPS_API_KEY` | `""` (empty) | API key for authentication |
+| `--model` | `AIOPS_MODEL` | `qwen3:8b` | Model name/ID to use |
+| `--verbose` or `-v` | `AIOPS_VERBOSE` | `false` | Enable verbose output |
 
 ### Run with sudo for full access to all logs:
 ```bash
@@ -98,14 +140,15 @@ sudo deno run -A main.ts
 
 ```
 🚀 Linux System Health Checker v2.0
-📦 Using model: llama3.2
-🔗 Ollama URL: http://localhost:11434
+📦 Using model: qwen3:8b
+🔗 API URL: http://localhost:11434/v1
+🔑 API Key: (none)
 📋 Verbose mode: OFF
 
 🔍 Starting Comprehensive System Health Check...
 
-🤖 Connecting to Ollama LLM...
-✅ Ollama connected successfully
+🤖 Connecting to LLM API...
+✅ API connected successfully
 
 [1/12] Checking dmesg-errors... analyzing... 🔴 CRITICAL!
 [2/12] Checking dmesg-warnings... analyzing... ⚠️  Warning
@@ -184,6 +227,45 @@ sudo deno run -A main.ts
   • Schedule maintenance for warning items
   • Set up monitoring for recurring issues
 ======================================================================
+```
+
+## API Provider Examples
+
+### Using with Ollama (Local, Default)
+```bash
+# Default configuration (Ollama on localhost)
+./main.ts
+
+# Remote Ollama instance
+./main.ts --url http://192.168.1.100:11434/v1 --model llama3.2
+```
+
+### Using with OpenAI
+```bash
+./main.ts \
+  --url https://api.openai.com/v1 \
+  --key sk-your-api-key-here \
+  --model gpt-4
+
+# Or with environment variables
+export AIOPS_API_URL="https://api.openai.com/v1"
+export AIOPS_API_KEY="sk-your-api-key-here"
+export AIOPS_MODEL="gpt-4"
+./main.ts
+```
+
+### Using with Other OpenAI-Compatible APIs
+Many providers offer OpenAI-compatible endpoints:
+
+```bash
+# Azure OpenAI
+./main.ts --url https://your-resource.openai.azure.com/openai/deployments/your-deployment --key your-azure-key
+
+# Together AI
+./main.ts --url https://api.together.xyz/v1 --key your-together-key --model meta-llama/Llama-3-70b-chat-hf
+
+# Anthropic (via OpenAI compatibility layer if available)
+# Or any other OpenAI-compatible endpoint
 ```
 
 ## Customization
