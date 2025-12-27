@@ -231,6 +231,11 @@ Respond with JSON only:`;
       const data = await response.json();
       
       try {
+        // Validate response structure
+        if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+          throw new Error("Invalid API response: missing choices array");
+        }
+        
         const responseContent = data.choices[0].message.content;
         const analysis = JSON.parse(responseContent);
         return {
@@ -242,11 +247,13 @@ Respond with JSON only:`;
           rawSample: this.verbose ? logContent.substring(0, 200) : undefined
         };
       } catch (parseError) {
+        // Safely get content for error reporting
+        const errorContent = data.choices?.[0]?.message?.content || JSON.stringify(data).substring(0, 500);
         return {
           source: source.name,
           status: "warning",
           summary: "Analysis completed with parsing issues",
-          details: data.choices[0].message.content.substring(0, 500),
+          details: errorContent,
           issues: ["LLM response parsing failed"],
         };
       }
